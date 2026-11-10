@@ -1,1 +1,50 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ระบบลงเวลาปฏิบัติราชการ</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:sans-serif;
+       background:linear-gradient(160deg,#172554,#1e3a8a);color:#fff;text-align:center;padding:20px}
+  .sp{width:46px;height:46px;border:5px solid rgba(255,255,255,.3);border-top-color:#c9a227;border-radius:50%;
+      animation:r 1s linear infinite;margin:0 auto 16px}
+  @keyframes r{to{transform:rotate(360deg)}}
+  a{color:#f6ecc4}
+</style>
+</head>
+<body>
+<div>
+  <div class="sp" id="sp"></div>
+  <div id="msg">กำลังเข้าสู่ระบบด้วย LINE...</div>
+</div>
+<script>
+  const LIFF_ID = 'ใส่-LIFF-ID-ที่นี่';
+  const APP_URL = 'https://script.google.com/macros/s/ใส่รหัส-Deploy/exec';
 
+  function fail(t){
+    document.getElementById('sp').style.display = 'none';
+    document.getElementById('msg').innerHTML = t + '<br><br><a href="' + APP_URL + '">เปิดระบบแบบปกติ</a>';
+  }
+  async function start(){
+    try{
+      await liff.init({ liffId: LIFF_ID });
+      const dec = liff.isLoggedIn() ? liff.getDecodedIDToken() : null;
+      const expired = !dec || dec.exp * 1000 < Date.now() + 60000;
+      if(!liff.isInClient() && (!liff.isLoggedIn() || expired)){
+        if(liff.isLoggedIn()) liff.logout();
+        liff.login({ redirectUri: location.href });
+        return;
+      }
+      const t = liff.getIDToken();
+      if(!t) return fail('ไม่สามารถอ่านข้อมูลบัญชี LINE ได้ (ตรวจสอบว่าเปิด scope "openid" แล้ว)');
+      location.replace(APP_URL + '?idt=' + encodeURIComponent(t));
+    }catch(err){
+      fail('เชื่อมต่อ LINE ไม่สำเร็จ: ' + (err && err.message ? err.message : err));
+    }
+  }
+  start();
+</script>
+</body>
+</html>
