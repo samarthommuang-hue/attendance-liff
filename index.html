@@ -2,31 +2,51 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>ระบบลงเวลาปฏิบัติราชการ</title>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <style>
-  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:sans-serif;
-       background:linear-gradient(160deg,#172554,#1e3a8a);color:#fff;text-align:center;padding:20px}
-  .sp{width:46px;height:46px;border:5px solid rgba(255,255,255,.3);border-top-color:#c9a227;border-radius:50%;
-      animation:r 1s linear infinite;margin:0 auto 16px}
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:sans-serif;background:linear-gradient(160deg,#172554,#1e3a8a);color:#fff}
+  #load{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;z-index:2}
+  .sp{width:46px;height:46px;border:5px solid rgba(255,255,255,.3);border-top-color:#c9a227;border-radius:50%;animation:r 1s linear infinite;margin:0 auto 16px}
   @keyframes r{to{transform:rotate(360deg)}}
   a{color:#f6ecc4}
+  #app{position:fixed;inset:0;width:100%;height:100%;border:0;display:none;background:#fff;z-index:1}
 </style>
 </head>
 <body>
-<div>
-  <div class="sp" id="sp"></div>
-  <div id="msg">กำลังเข้าสู่ระบบด้วย LINE...</div>
-</div>
+<div id="load"><div class="sp" id="sp"></div><div id="msg">กำลังเข้าสู่ระบบด้วย LINE...</div></div>
+<iframe id="app" allow="geolocation *; camera *; microphone *" allowfullscreen></iframe>
+
 <script>
   const LIFF_ID = '2012500699-cZ6jphMn';
   const APP_URL = 'https://script.google.com/a/macros/chasec.ac.th/s/AKfycbwDUoWH-4mV1ljjoLi67a3iyL5ylW7bjFNwA5TRt6tMOVJZCegNny7eim_m4xh7EAVf_w/exec';
 
+  const WATCH = {};
   function fail(t){
     document.getElementById('sp').style.display = 'none';
     document.getElementById('msg').innerHTML = t + '<br><br><a href="' + APP_URL + '">เปิดระบบแบบปกติ</a>';
   }
+  function okOrigin(o){ return /^https:\/\/[\w.-]+\.googleusercontent\.com$/.test(o) || o === 'https://script.google.com'; }
+
+  // ตัวกลาง GPS: รับคำขอจากระบบ (iframe) -> อ่านตำแหน่งที่หน้านี้ -> ส่งพิกัดกลับ
+  window.addEventListener('message', e => {
+    const d = e.data;
+    if(!d || typeof d !== 'object' || !okOrigin(e.origin)) return;
+    const reply = m => { try{ e.source.postMessage(Object.assign({ id:d.id }, m), e.origin); }catch(x){} };
+    if(d.type === 'att-geo-start'){
+      if(!navigator.geolocation) return reply({ type:'att-geo-err', code:2, message:'อุปกรณ์ไม่รองรับ GPS' });
+      if(WATCH[d.id] != null) navigator.geolocation.clearWatch(WATCH[d.id]);
+      WATCH[d.id] = navigator.geolocation.watchPosition(
+        p => reply({ type:'att-geo-pos', coords:{ latitude:p.coords.latitude, longitude:p.coords.longitude, accuracy:p.coords.accuracy } }),
+        err => reply({ type:'att-geo-err', code:err.code, message:err.message }),
+        { enableHighAccuracy:true, timeout:25000, maximumAge:0 });
+    } else if(d.type === 'att-geo-stop'){
+      if(WATCH[d.id] != null){ navigator.geolocation.clearWatch(WATCH[d.id]); delete WATCH[d.id]; }
+    }
+  });
+
   async function start(){
     try{
       await liff.init({ liffId: LIFF_ID });
@@ -39,7 +59,18 @@
       }
       const t = liff.getIDToken();
       if(!t) return fail('ไม่สามารถอ่านข้อมูลบัญชี LINE ได้ (ตรวจสอบว่าเปิด scope "openid" แล้ว)');
-      location.replace(APP_URL + '?idt=' + encodeURIComponent(t));
+      const url = APP_URL + '?idt=' + encodeURIComponent(t);
+
+      if(liff.getOS() === 'android'){
+        // Android: เปิดระบบไว้ในหน้านี้ เพื่อให้หน้านี้เป็นคนขอสิทธิ์ GPS
+        if(navigator.geolocation) navigator.geolocation.getCurrentPosition(() => {}, () => {}, { timeout:10000 }); // ให้ LINE ถามสิทธิ์ตั้งแต่เปิด
+        const f = document.getElementById('app');
+        const show = () => { document.getElementById('load').style.display = 'none'; f.style.display = 'block'; };
+        f.onload = show; setTimeout(show, 8000);
+        f.src = url + '&liff=1&po=' + encodeURIComponent(location.origin);
+      } else {
+        location.replace(url);   // iOS / อื่นๆ ใช้วิธีเดิม
+      }
     }catch(err){
       fail('เชื่อมต่อ LINE ไม่สำเร็จ: ' + (err && err.message ? err.message : err));
     }
